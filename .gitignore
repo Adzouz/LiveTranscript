@@ -17,3 +17,4 @@ sessions/
 # local env
 .env
 .env.*
+.vercel
