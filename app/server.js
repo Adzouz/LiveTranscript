@@ -5,6 +5,8 @@ const path = require('path')
 const os = require('os')
 const { spawn } = require('child_process')
 
+require('dotenv').config({ path: path.join(__dirname, '.env') })
+
 const BASE = path.join(__dirname, '..')
 const SESSIONS_DIR = path.join(BASE, 'sessions')
 // best available model wins; drop better .bin files into models/ and restart
@@ -383,6 +385,48 @@ app.get('/api/sessions/:id/notes.md', (req, res) => {
   res.setHeader('Content-Type', 'text/markdown; charset=utf-8')
   res.setHeader('Content-Disposition', `attachment; filename="${id}-notes.md"`)
   res.send(readNotes(id))
+})
+
+app.get('/api/sessions/:id/summary.md', (req, res) => {
+  const { id } = req.params
+  const p = path.join(SESSIONS_DIR, id, 'summary.md')
+  if (!fs.existsSync(p)) return res.status(404).json({ error: 'no summary yet' })
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="${id}-summary.md"`)
+  res.send(fs.readFileSync(p, 'utf8'))
+})
+
+app.post('/api/sessions/:id/notion', async (req, res) => {
+  const { id } = req.params
+  const token = process.env.NOTION_TOKEN
+  const parent = process.env.NOTION_PARENT_PAGE_ID
+  if (!token || !parent) {
+    return res.status(400).json({
+      error:
+        'Notion not configured: set NOTION_TOKEN and NOTION_PARENT_PAGE_ID in app/.env and restart. ' +
+        'Create an integration at notion.so/my-integrations, then share the parent page with it.',
+    })
+  }
+  const summaryPath = path.join(SESSIONS_DIR, id, 'summary.md')
+  if (!fs.existsSync(summaryPath)) {
+    return res.status(404).json({ error: 'No summary yet — generate one first.' })
+  }
+  try {
+    const { Client: NotionClient } = require('@notionhq/client')
+    const { markdownToBlocks } = require('@tryfabric/martian')
+    const notion = new NotionClient({ auth: token })
+    const meta = readMeta(id)
+    const blocks = markdownToBlocks(fs.readFileSync(summaryPath, 'utf8'))
+    const page = await notion.pages.create({
+      parent: { page_id: parent },
+      properties: { title: { title: [{ text: { content: meta.title } }] } },
+      // Notion caps children at 100 blocks per request
+      children: blocks.slice(0, 100),
+    })
+    res.json({ url: page.url })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 app.post('/api/sessions/:id/photos', upload.array('photos', 10), (req, res) => {

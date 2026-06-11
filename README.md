@@ -17,7 +17,8 @@ conference wifi: everything runs on your laptop, only the summary step calls Cla
 - **Photos** — drag-drop / paste on laptop, or open the LAN URL on your phone and snap
   slides straight into the session
 - **AI summary** — transcript + your notes → structured markdown summary via `claude -p`
-  (your notes are weighted as "what mattered")
+  (your notes are weighted as "what mattered"); saved per session and reopened instantly,
+  with Regenerate / Save .md / Publish to Notion actions
 - **Responsive UI** — React + Tailwind + shadcn/ui, works from a phone
 
 ## Requirements
@@ -88,6 +89,20 @@ upgrading the model) — the original transcript is kept as a `.bak`.
 | `SEGMENT_SECONDS` | `15`    | segment length = transcription cadence |
 
 List devices: `ffmpeg -f avfoundation -list_devices true -i ""`
+
+## Publish to Notion (optional)
+
+1. Create an internal integration at [notion.so/my-integrations](https://www.notion.so/my-integrations)
+   and copy its secret.
+2. In Notion, open the page that should hold the summaries → ⋯ menu → Connections →
+   add your integration.
+3. Copy the page id (the 32-char hex part of the page URL) and create `app/.env`:
+   ```
+   NOTION_TOKEN=ntn_xxx
+   NOTION_PARENT_PAGE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ```
+4. Restart the server. "Publish to Notion" in the summary dialog creates a child page
+   titled after the session.
 
 ## Privacy
 

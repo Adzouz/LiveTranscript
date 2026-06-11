@@ -29,6 +29,7 @@ import {
   AudioLines,
   Camera,
   Check,
+  Download,
   ImageIcon,
   Menu,
   Mic,
@@ -36,6 +37,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Send,
   Sparkles,
   Square,
   Trash2,
@@ -135,6 +137,8 @@ export default function App() {
   const [titleDraft, setTitleDraft] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [micLevel, setMicLevel] = useState<number | null>(null)
+  const [publishing, setPublishing] = useState(false)
+  const [notionUrl, setNotionUrl] = useState<string | null>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
 
@@ -144,6 +148,7 @@ export default function App() {
     setCurrent(id)
     setEditingTitle(false)
     setSheetOpen(false)
+    setNotionUrl(null)
     setDetail(await api<SessionDetail>(`/sessions/${id}`))
   }, [])
 
@@ -251,23 +256,45 @@ export default function App() {
     if (list.length > 0) openSession(list[0].id)
   }
 
+  // saved summary opens instantly; AI only runs when there is none (or on Regenerate)
   const summarize = async () => {
     if (!current || !detail) return
-    if (detail.summary && !confirm('Summary exists. Regenerate?')) {
+    if (detail.summary) {
       setSummaryOpen(true)
       return
     }
+    await runSummarize()
+  }
+
+  const runSummarize = async () => {
+    if (!current) return
     setSummarizing(true)
     try {
       const { summary } = await api<{ summary: string }>(`/sessions/${current}/summarize`, {
         method: 'POST',
       })
       setDetail((d) => (d ? { ...d, summary } : d))
+      setNotionUrl(null)
       setSummaryOpen(true)
     } catch (e) {
       alert((e as Error).message)
     } finally {
       setSummarizing(false)
+    }
+  }
+
+  const publishNotion = async () => {
+    if (!current) return
+    setPublishing(true)
+    try {
+      const { url } = await api<{ url: string }>(`/sessions/${current}/notion`, {
+        method: 'POST',
+      })
+      setNotionUrl(url)
+    } catch (e) {
+      alert((e as Error).message)
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -591,14 +618,46 @@ export default function App() {
 
       {/* summary dialog */}
       <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
-        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="size-4 text-yellow-400" /> {detail?.meta.title}
             </DialogTitle>
           </DialogHeader>
-          <div className="prose prose-invert prose-sm max-w-none prose-headings:font-semibold">
+          <div className="prose prose-invert prose-sm min-h-0 max-w-none flex-1 overflow-y-auto prose-headings:font-semibold">
             <ReactMarkdown>{detail?.summary ?? ''}</ReactMarkdown>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-3">
+            {notionUrl && (
+              <a
+                href={notionUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mr-auto text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                View in Notion ↗
+              </a>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => (window.location.href = `/api/sessions/${current}/summary.md`)}
+            >
+              <Download className="size-3.5" /> Save .md
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={publishing || !!notionUrl}
+              onClick={publishNotion}
+            >
+              <Send className="size-3.5" />
+              {notionUrl ? 'Published ✓' : publishing ? 'Publishing…' : 'Publish to Notion'}
+            </Button>
+            <Button variant="outline" size="sm" disabled={summarizing} onClick={runSummarize}>
+              <Sparkles className={`size-3.5 ${summarizing ? 'animate-pulse' : ''}`} />
+              {summarizing ? 'Regenerating…' : 'Regenerate'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
