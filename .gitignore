@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# build output
+app/ui/dist/
+
+# whisper models (download via setup, 0.5–1.6 GB each)
+models/
+
+# recorded sessions — private audio, transcripts, notes, photos
+sessions/
+
+# logs & OS noise
+*.log
+.DS_Store
+
+# local env
+.env
+.env.*

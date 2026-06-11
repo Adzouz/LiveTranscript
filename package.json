@@ -1,0 +1,26 @@
+{
+  "name": "livetranscript",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Record conference talks, transcribe locally with whisper.cpp, take rich notes, and summarize with Claude.",
+  "scripts": {
+    "start": "node app/server.js",
+    "dev": "npm --prefix app/ui run dev",
+    "build": "npm --prefix app/ui run build",
+    "lint": "npm --prefix app/ui run lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,mjs,ts,tsx,css,json,md}": "prettier --write",
+    "app/ui/src/**/*.{ts,tsx}": "npm --prefix app/ui run lint --"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
+    "prettier": "^3.8.4"
+  }
+}

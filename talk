@@ -1,0 +1,102 @@
+#!/bin/bash
+# talk — record conference talks, transcribe locally, summarize with Claude.
+#
+# Usage:
+#   ./talk record "Talk title"     Record mic until Ctrl+C, then auto-transcribe
+#   ./talk transcribe <file.wav>   (Re-)transcribe an existing recording
+#   ./talk summarize <file.txt>    Summarize one transcript with Claude
+#   ./talk day                     Summarize ALL transcripts into one daily digest
+#
+# Env overrides:
+#   AUDIO_DEVICE  avfoundation audio device index (default: 0 = built-in mic)
+#   LANG_HINT     whisper language (default: auto)
+
+set -euo pipefail
+
+BASE="$(cd "$(dirname "$0")" && pwd)"
+MODEL="$BASE/models/ggml-small.bin"
+REC="$BASE/recordings"
+AUDIO_DEVICE="${AUDIO_DEVICE:-0}"
+LANG_HINT="${LANG_HINT:-auto}"
+mkdir -p "$REC"
+
+slugify() {
+  echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g'
+}
+
+cmd_record() {
+  local title="${1:-talk}"
+  local slug stamp wav
+  slug="$(slugify "$title")"
+  stamp="$(date +%Y%m%d-%H%M)"
+  wav="$REC/$stamp-$slug.wav"
+
+  echo "Recording '$title' → $wav"
+  echo "Press Ctrl+C (or 'q') to stop."
+  # 16 kHz mono — exactly what whisper wants, ~115 MB/hour
+  ffmpeg -hide_banner -loglevel error -f avfoundation -i ":$AUDIO_DEVICE" \
+    -ac 1 -ar 16000 -c:a pcm_s16le "$wav" || true
+
+  if [[ ! -s "$wav" ]]; then
+    echo "ERROR: recording is empty. Check mic permission for your terminal app" >&2
+    echo "(System Settings → Privacy & Security → Microphone)." >&2
+    exit 1
+  fi
+  echo ""
+  echo "Recording saved ($(du -h "$wav" | cut -f1)). Transcribing..."
+  cmd_transcribe "$wav"
+}
+
+cmd_transcribe() {
+  local wav="$1"
+  local out="${wav%.wav}"
+  whisper-cli -m "$MODEL" -f "$wav" -l "$LANG_HINT" -otxt -of "$out" --no-prints
+  echo "Transcript: $out.txt"
+  echo "--- preview ---"
+  head -c 400 "$out.txt"
+  echo ""
+  echo "---------------"
+  echo "Summarize now:  $0 summarize $out.txt"
+}
+
+cmd_summarize() {
+  local txt="$1"
+  local out="${txt%.txt}-summary.md"
+  echo "Summarizing $txt with Claude..."
+  claude -p "You are summarizing a transcript of a JavaScript conference talk (auto-transcribed, so expect some transcription errors — infer the intended technical terms). Produce a markdown summary with: a 2-3 sentence TL;DR, the key technical points as bullets, any libraries/tools/APIs mentioned (with what was said about them), notable quotes or hot takes, and action items worth trying later. Transcript follows:
+
+$(cat "$txt")" > "$out"
+  echo "Summary: $out"
+  echo ""
+  cat "$out"
+}
+
+cmd_day() {
+  local out="$REC/$(date +%Y%m%d)-daily-digest.md"
+  local files
+  files=$(ls "$REC"/*.txt 2>/dev/null | grep -v summary || true)
+  if [[ -z "$files" ]]; then
+    echo "No transcripts found in $REC" >&2
+    exit 1
+  fi
+  echo "Building daily digest from:"
+  echo "$files"
+  {
+    for f in $files; do
+      echo "===== TALK: $(basename "$f" .txt) ====="
+      cat "$f"
+      echo ""
+    done
+  } | claude -p "These are auto-generated transcripts of several talks from a JavaScript conference I attended today (expect transcription errors — infer intended technical terms). Produce a markdown daily digest with: one section per talk (title from the ===== TALK markers, cleaned up) containing a TL;DR and key points; then a final 'Cross-talk themes' section; then a 'Things to try' action list. Transcripts follow on stdin." > "$out"
+  echo "Digest: $out"
+  echo ""
+  cat "$out"
+}
+
+case "${1:-}" in
+  record)     shift; cmd_record "$@" ;;
+  transcribe) shift; cmd_transcribe "$@" ;;
+  summarize)  shift; cmd_summarize "$@" ;;
+  day)        cmd_day ;;
+  *) grep '^#' "$0" | head -14 | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
