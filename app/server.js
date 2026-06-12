@@ -381,6 +381,23 @@ app.post('/api/sessions/:id/pause', (req, res) => res.json(stopRecording(req.par
 
 app.post('/api/sessions/:id/stop', (req, res) => res.json(stopRecording(req.params.id, 'stopped')))
 
+app.patch('/api/sessions/:id/transcript/:seg', (req, res) => {
+  const { id } = req.params
+  const seg = Number(req.params.seg)
+  const text = (req.body.text || '').trim()
+  const p = path.join(SESSIONS_DIR, id, 'transcript.jsonl')
+  if (!fs.existsSync(p)) return res.status(404).json({ error: 'no transcript' })
+  const lines = fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map(JSON.parse)
+  const entry = lines.find((l) => l.seg === seg)
+  if (!entry) return res.status(404).json({ error: 'segment not found' })
+  entry.text = text
+  // emptied chunk = deleted chunk (useful for whisper hallucinations)
+  const kept = lines.filter((l) => l.text)
+  fs.writeFileSync(p, kept.map((l) => JSON.stringify(l)).join('\n') + (kept.length ? '\n' : ''))
+  broadcast(id, { type: 'chunk-edit', seg, text })
+  res.json({ seg, text })
+})
+
 app.put('/api/sessions/:id/notes', (req, res) => {
   const { id } = req.params
   fs.writeFileSync(path.join(SESSIONS_DIR, id, 'notes.md'), req.body.markdown || '')

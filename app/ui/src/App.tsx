@@ -115,6 +115,56 @@ function MicIcon({ active }: { active: boolean }) {
   )
 }
 
+// transcript text with click-to-fix words: click a word, retype it, Enter.
+// Emptying a word deletes it; emptying the whole chunk deletes the chunk.
+function EditableChunk({ text, onSave }: { text: string; onSave: (t: string) => void }) {
+  const [edit, setEdit] = useState<{ idx: number; value: string } | null>(null)
+  const tokens = text.split(/(\s+)/)
+  const save = () => {
+    if (!edit) return
+    const next = [...tokens]
+    next[edit.idx] = edit.value.trim()
+    setEdit(null)
+    const result = next
+      .join('')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+    if (result !== text) onSave(result)
+  }
+  return (
+    <p className="min-w-0 text-sm leading-relaxed">
+      {tokens.map((tok, i) =>
+        /^\s*$/.test(tok) ? (
+          tok
+        ) : edit?.idx === i ? (
+          <input
+            key={i}
+            autoFocus
+            className="inline-block rounded border border-ring bg-background px-1 text-sm outline-none"
+            style={{ width: `${Math.max(edit.value.length, 2) + 2}ch` }}
+            value={edit.value}
+            onChange={(e) => setEdit({ idx: i, value: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') save()
+              if (e.key === 'Escape') setEdit(null)
+            }}
+            onBlur={save}
+          />
+        ) : (
+          <span
+            key={i}
+            title="Click to fix"
+            className="-mx-0.5 cursor-text rounded-sm px-0.5 hover:bg-accent hover:underline hover:decoration-dotted hover:underline-offset-2"
+            onClick={() => setEdit({ idx: i, value: tok })}
+          >
+            {tok}
+          </span>
+        ),
+      )}
+    </p>
+  )
+}
+
 function PaneHeader({ label, children }: { label: string; children?: React.ReactNode }) {
   return (
     <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
@@ -186,6 +236,14 @@ export default function App() {
           loadSessions()
           return { ...d, meta: { ...d.meta, status: ev.status } }
         }
+        if (ev.type === 'chunk-edit') {
+          return {
+            ...d,
+            transcript: d.transcript
+              .map((c) => (c.seg === ev.seg ? { ...c, text: ev.text } : c))
+              .filter((c) => c.text),
+          }
+        }
         if (ev.type === 'photo') return { ...d, photos: [...d.photos, ev.file] }
         if (ev.type === 'summary') return { ...d, summary: ev.summary }
         return d
@@ -228,6 +286,26 @@ export default function App() {
     } catch (e) {
       alert((e as Error).message)
     }
+  }
+
+  const fixChunk = async (seg: number, text: string) => {
+    if (!current) return
+    // optimistic — SSE broadcast keeps other clients in sync
+    setDetail((d) =>
+      d
+        ? {
+            ...d,
+            transcript: d.transcript
+              .map((c) => (c.seg === seg ? { ...c, text } : c))
+              .filter((c) => c.text),
+          }
+        : d,
+    )
+    await api(`/sessions/${current}/transcript/${seg}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
   }
 
   const startRename = () => {
@@ -543,7 +621,9 @@ export default function App() {
                       <span className="w-11 shrink-0 pt-[3px] text-right font-mono text-[10px] leading-relaxed text-muted-foreground/70">
                         {fmtTime(c.time)}
                       </span>
-                      <p className="min-w-0 text-sm leading-relaxed">{c.text}</p>
+                      <div className="min-w-0 flex-1">
+                        <EditableChunk text={c.text} onSave={(t) => fixChunk(c.seg, t)} />
+                      </div>
                     </div>
                   ))}
                   {detail.transcript.length === 0 && (

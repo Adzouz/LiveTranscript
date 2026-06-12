@@ -29,6 +29,7 @@ export interface SessionDetail {
 export type SseEvent =
   | { type: 'hello' }
   | ({ type: 'chunk' } & Chunk)
+  | { type: 'chunk-edit'; seg: number; text: string }
   | { type: 'status'; status: SessionStatus }
   | { type: 'level'; db: number }
   | { type: 'photo'; file: string }
